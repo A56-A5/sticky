@@ -1,0 +1,315 @@
+use gtk4::prelude::*;
+use gtk4::{
+    Application, ApplicationWindow, Box, Button, Label, Orientation, ScrolledWindow, TextView,
+};
+
+use std::cell::RefCell;
+use std::rc::Rc;
+
+use sticky::storage::repository::NoteRepository;
+
+const APP_ID: &str = "com.sticky.notes";
+const AUTOSAVE_DELAY_MS: u64 = 400;
+
+fn load_css() {
+    let provider = gtk4::CssProvider::new();
+
+    provider.load_from_data(
+        r#"
+        window {
+            background: #FFF3A6;
+        }
+
+        .sticky-root {
+            background: #FFF3A6;
+        }
+
+        .sticky-header {
+            background: #FFF3A6;
+            border-bottom: 1px solid #E5D66A;
+        }
+
+        .sticky-toolbar {
+            background: #FFF3A6;
+            border-top: 1px solid #E5D66A;
+        }
+
+        .sticky-title {
+            color: #222222;
+            font-size: 16px;
+            font-weight: 600;
+        }
+
+        button {
+            background: transparent;
+            border: none;
+            box-shadow: none;
+            color: #222222;
+            font-size: 18px;
+            min-width: 30px;
+            min-height: 30px;
+            padding: 3px 7px;
+        }
+
+        button:hover {
+            background: rgba(0, 0, 0, 0.08);
+        }
+
+        textview {
+            background: #FFF3A6;
+            color: #222222;
+            font-size: 16px;
+        }
+
+        textview text {
+            background-color: #FFF3A6;
+            color: #222222;
+        }
+        "#,
+    );
+
+    let display =
+        gtk4::gdk::Display::default().expect("GTK display should exist");
+
+    gtk4::style_context_add_provider_for_display(
+        &display,
+        &provider,
+        gtk4::STYLE_PROVIDER_PRIORITY_APPLICATION,
+    );
+}
+
+fn build_window(app: &Application, note_id: &str) {
+    let repository =
+        NoteRepository::default().expect("Could not initialize note repository");
+
+    let note = repository
+        .get(note_id)
+        .expect("Could not read note");
+
+    let window = ApplicationWindow::builder()
+        .application(app)
+        .title(format!("Sticky — {}", note.title))
+        .default_width(360)
+        .default_height(400)
+        .decorated(false)
+        .build();
+
+    // Keep the note and repository alive for the lifetime of the window.
+    let note = Rc::new(RefCell::new(note));
+    let repository = Rc::new(repository);
+
+    // ─────────────────────────────────────────
+    // Root
+    // ─────────────────────────────────────────
+
+    let root = Box::new(Orientation::Vertical, 0);
+    root.add_css_class("sticky-root");
+
+    // ─────────────────────────────────────────
+    // Header
+    // ─────────────────────────────────────────
+
+    let header = Box::new(Orientation::Horizontal, 4);
+
+    header.set_margin_top(6);
+    header.set_margin_bottom(6);
+    header.set_margin_start(8);
+    header.set_margin_end(8);
+
+    header.add_css_class("sticky-header");
+
+    let add_button = Button::with_label("+");
+    add_button.set_tooltip_text(Some("New note"));
+
+    let title = gtk4::Entry::new();
+    title.set_text(&note.borrow().title);
+    title.set_hexpand(true);
+    title.add_css_class("sticky-title");
+    title.set_has_frame(false);
+	
+    let title_for_save = title.clone();
+    let repository_for_title = NoteRepository::default()
+       .expect("Could not initialize note repository");
+
+    let note_id_for_title = note.borrow().id.clone();
+
+    title.connect_activate(move |entry| {
+        let mut note = repository_for_title
+            .get(&note_id_for_title)
+            .expect("Could not read note");
+
+        note.title = entry.text().to_string();
+
+        repository_for_title
+            .update(&note)
+            .expect("Could not save note");
+
+        println!("Saved title: {}", note.title);
+    });
+
+    let menu_button = Button::with_label("☰");
+    mu_button.set_tooltip_text(Some("Note menu"));
+
+    let close_button = Button::with_label("×");
+    close_button.set_tooltip_text(Some("Close"));
+
+    header.append(&add_button);
+    header.append(&title);
+    header.append(&menu_button);
+    header.append(&close_button);
+
+    // ─────────────────────────────────────────
+    // Close
+    // ─────────────────────────────────────────
+
+    let window_for_close = window.clone();
+
+    close_button.connect_clicked(move |_| {
+        window_for_close.close();
+    });
+
+    // ─────────────────────────────────────────
+    // Editor
+    // ─────────────────────────────────────────
+
+    let text_view = TextView::new();
+
+    text_view.set_wrap_mode(gtk4::WrapMode::WordChar);
+    text_view.set_vexpand(true);
+    text_view.set_hexpand(true);
+
+    text_view.set_top_margin(12);
+    text_view.set_bottom_margin(12);
+    text_view.set_left_margin(14);
+    text_view.set_right_margin(14);
+
+    let buffer = text_view.buffer();
+
+    // Load existing body.
+    buffer.set_text(&note.borrow().body);
+
+
+    // ─────────────────────────────────────────
+    // Autosave
+    // ─────────────────────────────────────────
+
+    let save_source: Rc<
+    RefCell<Option<gtk4::glib::SourceId>>
+> = Rc::new(RefCell::new(None));
+
+    let note_for_save = Rc::clone(&note);
+    let repository_for_save = Rc::clone(&repository);
+
+    buffer.connect_changed(move |buffer| {
+        // Cancel the previous pending save.
+
+        let text = buffer
+            .text(&buffer.start_iter(), &buffer.end_iter(), true)
+            .to_string();
+
+        let note = Rc::clone(&note_for_save);
+        let repository = Rc::clone(&repository_for_save);
+
+        let source_id = gtk4::glib::timeout_add_local(
+            std::time::Duration::from_millis(AUTOSAVE_DELAY_MS),
+            move || {
+                {
+                    let mut note = note.borrow_mut();
+
+                    note.body = text.clone();
+
+                    if let Err(error) = repository.update(&note) {
+                        eprintln!(
+                            "Failed to save note {}: {:#}",
+                            note.id,
+                            error
+                        );
+                    } else {
+                        println!("Saved note {}", note.id);
+                    }
+                }
+
+                gtk4::glib::ControlFlow::Break
+            },
+        );
+
+        *save_source.borrow_mut() = Some(source_id);
+    });
+
+    let scrolled = ScrolledWindow::new();
+
+    scrolled.set_child(Some(&text_view));
+    scrolled.set_vexpand(true);
+    scrolled.set_hexpand(true);
+
+    // ─────────────────────────────────────────
+    // Toolbar
+    // ─────────────────────────────────────────
+
+    let toolbar = Box::new(Orientation::Horizontal, 2);
+
+    toolbar.set_margin_top(5);
+    toolbar.set_margin_bottom(5);
+    toolbar.set_margin_start(8);
+    toolbar.set_margin_end(8);
+
+    toolbar.add_css_class("sticky-toolbar");
+
+    let bold_button = Button::with_label("B");
+    let italic_button = Button::with_label("I");
+    let underline_button = Button::with_label("U");
+    let list_button = Button::with_label("≡");
+    let image_button = Button::with_label("▧");
+
+    bold_button.set_tooltip_text(Some("Bold"));
+    italic_button.set_tooltip_text(Some("Italic"));
+    underline_button.set_tooltip_text(Some("Underline"));
+    list_button.set_tooltip_text(Some("List"));
+    image_button.set_tooltip_text(Some("Insert image"));
+
+    toolbar.append(&bold_button);
+    toolbar.append(&italic_button);
+    toolbar.append(&underline_button);
+    toolbar.append(&list_button);
+    toolbar.append(&image_button);
+
+    // ─────────────────────────────────────────
+    // Assemble
+    // ─────────────────────────────────────────
+
+    root.append(&header);
+    root.append(&scrolled);
+    root.append(&toolbar);
+
+    window.set_child(Some(&root));
+
+    window.present();
+}
+
+fn main() {
+    let args: Vec<String> = std::env::args().collect();
+
+    if args.len() < 2 {
+        eprintln!("Usage: sticky-note <note-id>");
+        std::process::exit(1);
+    }
+
+    let note_id = args[1].clone();
+
+    let application = Application::builder()
+        .application_id(APP_ID)
+        .flags(gtk4::gio::ApplicationFlags::NON_UNIQUE)
+        .build();
+
+    application.connect_activate(move |app| {
+        load_css();
+        build_window(app, &note_id);
+    });
+
+    let program_name = args
+        .first()
+        .map(String::as_str)
+        .unwrap_or("sticky-note");
+
+    application.run_with_args(&[program_name]);
+}
