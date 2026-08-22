@@ -4,6 +4,13 @@ use serde::{Deserialize, Serialize};
 use super::NoteType;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NoteImage {
+    pub path: String,
+    pub width: i32,
+    pub height: i32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Note {
     pub id: String,
     pub title: String,
@@ -11,6 +18,8 @@ pub struct Note {
     pub created: DateTime<FixedOffset>,
     pub updated: DateTime<FixedOffset>,
     pub body: String,
+    #[serde(default)]
+    pub images: Vec<NoteImage>,
 }
 
 impl Note {
@@ -24,6 +33,7 @@ impl Note {
             created: now,
             updated: now,
             body: String::new(),
+            images: Vec::new(),
         }
     }
 }

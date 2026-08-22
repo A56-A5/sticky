@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
-use crate::model::{Note, NoteType};
+use crate::model::{Note, NoteType, NoteImage};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NoteMeta {
@@ -11,6 +11,8 @@ pub struct NoteMeta {
     pub note_type: NoteType,
     pub created: chrono::DateTime<chrono::FixedOffset>,
     pub updated: chrono::DateTime<chrono::FixedOffset>,
+    #[serde(default)]
+    pub images: Vec<NoteImage>,
 }
 
 impl From<&Note> for NoteMeta {
@@ -21,6 +23,7 @@ impl From<&Note> for NoteMeta {
             note_type: note.note_type,
             created: note.created,
             updated: note.updated,
+            images: note.images.clone(),
         }
     }
 }
@@ -51,5 +54,6 @@ pub fn deserialize(content: &str) -> Result<Note> {
         created: meta.created,
         updated: meta.updated,
         body: body.strip_prefix('\n').unwrap_or(body).to_string(),
+        images: meta.images,
     })
 }
