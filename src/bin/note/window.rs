@@ -30,7 +30,7 @@ pub fn build_window(app: &Application, note_id: &str) {
         .get(note_id)
         .expect("Could not read note");
 
-    let window = ApplicationWindow::builder()
+let window = ApplicationWindow::builder()
         .application(app)
         .title(format!("Sticky — {}", note.title))
         .default_width(360)

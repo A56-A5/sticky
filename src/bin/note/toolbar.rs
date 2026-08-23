@@ -223,8 +223,8 @@ fn html_to_pango_markup(html: &str) -> String {
         while let Some(start) = processed.find("<a href=") {
             if let Some(end) = processed[start..].find('>') {
                 let link_end = processed[start..].find("</a>").map(|e| start + e + 4).unwrap_or(processed.len());
-                let link_text = &processed[start + end + 1..link_end];
-                processed.replace_range(start..link_end, link_text);
+                let link_text = &processed[start + end + 1..link_end].to_string();
+                processed.replace_range(start..link_end, &link_text);
             } else {
                 break;
             }
